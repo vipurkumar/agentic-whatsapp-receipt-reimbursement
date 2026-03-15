@@ -1,0 +1,7 @@
+.env
+__pycache__/
+receipts/
+service-account.json
+.venv/
+*.pyc
+reimbursements.xlsx

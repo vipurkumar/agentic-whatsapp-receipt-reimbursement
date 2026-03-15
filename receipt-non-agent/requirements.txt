@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+python-multipart
+httpx
+anthropic
+gspread
+google-auth
+python-dotenv
+openpyxl

@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+service-account.json
+receipts/
+reimbursements.xlsx
+.chroma_db/
+*.egg-info/
+dist/
+build/
+.ruff_cache/

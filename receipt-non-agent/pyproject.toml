@@ -1,0 +1,9 @@
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "TCH"]
+
+[tool.pyright]
+typeCheckingMode = "basic"
+pythonVersion = "3.12"
