@@ -2,15 +2,19 @@
 
 ## Overview
 
-WhatsApp-based receipt processing system. Users send receipt photos or text commands via WhatsApp, and a Claude-powered agent extracts data, logs expenses, sends reimbursement emails, and answers natural language queries.
+Receipt processing system that extracts data from receipt photos, logs expenses to Excel, sends reimbursement emails, and answers natural language queries.
 
-Two parallel implementations:
+**Two usage modes:**
+- **Claude Code Skill** — Use `/omni1-reimbursement-agentic-skill` to process receipts directly from a folder. No WhatsApp/Twilio needed. Claude reads images, extracts data, and calls the Python modules.
+- **WhatsApp Bot** — Users send receipts via WhatsApp. Claude agent orchestrates the full flow via Twilio webhooks.
+
+**Two implementations:**
 - `receipt-agent-agentic/` — Claude-powered agentic version (main). Claude orchestrates workflows using tool_use.
 - `receipt-non-agent/` — Hardcoded sequential pipeline for receipt processing only.
 
 ## Tech Stack
 
-Python 3.12, FastAPI, Anthropic Claude API (Vision + tool_use), Twilio WhatsApp, openpyxl (Excel), smtplib (SMTP).
+Python 3.12, FastAPI, Anthropic Claude API (Vision + tool_use), Twilio WhatsApp (optional), openpyxl (Excel), smtplib (SMTP).
 
 ## Development Commands
 

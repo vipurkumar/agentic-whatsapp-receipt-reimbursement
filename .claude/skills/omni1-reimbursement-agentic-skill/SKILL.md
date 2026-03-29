@@ -1,132 +1,155 @@
 ---
 name: omni1-reimbursement-agentic-skill
-description: Process receipts, query expenses, and manage reimbursements via WhatsApp. Use when working with the agentic receipt reimbursement system.
+description: Process receipt images from a folder, log expenses to Excel, send reimbursement emails, and query spending. No WhatsApp needed — Claude Code handles everything directly.
 user-invocable: true
-argument-hint: [action or question]
+argument-hint: [folder path or action]
+allowed-tools: Read, Bash, Glob
 ---
 
-# Agentic WhatsApp Receipt Reimbursement Skill
+# Receipt Reimbursement Skill (Claude Code Native)
 
-You are assisting with a WhatsApp-based receipt reimbursement system powered by Claude. The system processes receipt photos, logs expenses to Excel, sends reimbursement emails, and answers natural language queries — all via WhatsApp.
+You are a receipt reimbursement assistant running inside Claude Code. You process receipt images directly — no WhatsApp or Twilio needed. You can see images (you're multimodal), extract data yourself, and call the existing Python modules to log, email, and query expenses.
 
-## System Architecture
+## How It Works
 
+1. **You read receipt images directly** using your vision capability (no separate API call needed)
+2. **You run Python snippets** that call the existing modules for logging, emailing, querying, and deleting
+3. **You talk to the user directly** in the Claude Code chat — no WhatsApp messaging
+
+## Setup
+
+The user needs a `.env` file in `receipt-agent-agentic/` with at minimum:
 ```
-WhatsApp Message → Twilio Webhook (main.py) → Download Images
-→ Agent Loop (agent.py, max 20 iterations):
-    → Claude sees message + base64-encoded images
-    → Claude decides which tools to call
-    → Tools execute concurrently via execute_tool() in tools.py
-    → Results fed back to Claude
-→ Final: send_whatsapp confirmation
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=you@gmail.com
+SMTP_PASSWORD=your_app_password
+REIMBURSEMENT_EMAIL=finance@company.com
 ```
 
-## 7 Available Tools
+`ANTHROPIC_API_KEY` and `TWILIO_*` are NOT needed for this workflow.
 
-All tools are defined in `receipt-agent-agentic/tools.py` as `TOOL_SCHEMAS` and dispatched by `execute_tool()`.
-
-### 1. `extract_receipt`
-Extract structured data from a receipt image using Claude Vision.
-- **Input**: `image_path` (string, required) — local file path to receipt image
-- **Output**: `{success, date, amount, currency, expense_type, merchant, description}`
-- **Implementation**: `receipt_processor.py` → `extract_receipt()` (async)
-
-### 2. `check_duplicate`
-Check if a receipt with matching date, merchant, and amount already exists.
-- **Input**: `date` (DD/MM/YYYY), `merchant`, `amount` (all required)
-- **Output**: `{is_duplicate: bool}`
-- **Implementation**: `excel_logger.py` → `is_duplicate()` (sync)
-
-### 3. `log_receipt`
-Save a receipt to the Excel reimbursement file. Returns assigned sequence number.
-- **Input**: `date`, `amount`, `currency`, `expense_type`, `merchant`, `description` (all required), `image_path` (optional)
-- **Output**: `{seq_number: int}`
-- **Implementation**: `excel_logger.py` → `append_receipt()` (sync)
-
-### 4. `send_email`
-Send reimbursement or custom report emails with attachments.
-- **Input**: `receipts` (array of receipt objects), `to` (optional custom recipient), `subject` (optional), `body` (optional)
-- **Behavior**: If `subject` + `body` provided → custom report via `send_summary_email()`. If `receipts` provided → standard reimbursement via `send_reimbursement_email()`.
-- **Implementation**: `email_sender.py` (sync, wrapped with `asyncio.to_thread`)
-
-### 5. `query_expenses`
-Query logged receipts with filters. Returns matching receipts and totals by currency.
-- **Input**: `filter_type` (required, enum: all/month/expense_type/last_n/merchant/summary), `filter_value` (optional)
-- **Output**: `{count, receipts, totals}` or summary dict
-- **Implementation**: `excel_logger.py` → `query_receipts()` / `get_summary()` (sync)
-
-### 6. `delete_receipt`
-Remove a receipt by sequence number. Remaining receipts are re-numbered.
-- **Input**: `seq_number` (integer, required)
-- **Output**: `{deleted: bool}`
-- **Implementation**: `excel_logger.py` → `delete_receipt()` (sync)
-
-### 7. `send_whatsapp`
-Send a WhatsApp message to the user. Always the final action in any flow.
-- **Input**: `to` (phone number, required), `message` (text, required)
-- **Output**: `{sent: bool}`
-- **Implementation**: `whatsapp_client.py` → `send_text_message()` (async)
-
-## Standard Workflows
-
-### Processing a Receipt
-1. `extract_receipt` → get structured data from image
-2. `check_duplicate` → verify not already logged
-3. `log_receipt` → save to Excel (if not duplicate)
-4. `send_email` → email reimbursement with attachment
-5. `send_whatsapp` → confirm to user
-
-### Querying Expenses
-1. `query_expenses` → filter by month/type/merchant/etc.
-2. `send_whatsapp` → reply with formatted results
-
-### Deleting a Receipt
-1. `delete_receipt` → remove by sequence number
-2. `send_whatsapp` → confirm deletion
-
-### Batch Processing (Multiple Images)
-- `main.py` debounces for 5 seconds to batch images sent rapidly
-- All images processed in single agent run
-- Single batched email sent for all receipts
-
-## Key Files
-
-| File | Purpose |
-|------|---------|
-| `receipt-agent-agentic/main.py` | FastAPI webhook server, image debouncing |
-| `receipt-agent-agentic/agent.py` | Agentic loop (Claude + tool calls, max 20 iterations) |
-| `receipt-agent-agentic/tools.py` | Tool schemas (`TOOL_SCHEMAS`) and `execute_tool()` dispatcher |
-| `receipt-agent-agentic/config.py` | `Config` dataclass, env var loading via dotenv |
-| `receipt-agent-agentic/receipt_processor.py` | `ReceiptData` dataclass, Claude Vision extraction |
-| `receipt-agent-agentic/excel_logger.py` | Excel CRUD: append, query, delete, duplicate check, summary |
-| `receipt-agent-agentic/email_sender.py` | SMTP email: reimbursement + custom reports |
-| `receipt-agent-agentic/whatsapp_client.py` | Twilio: media download + message sending |
-| `receipt-agent-agentic/test_local.py` | CLI for local testing (supports `--dry-run`) |
-| `receipt-agent-agentic/test_pipeline.py` | Mocked pipeline tests |
-
-## Development Guide
-
-### Adding a New Tool
-1. Add schema dict to `TOOL_SCHEMAS` in `tools.py` (name, description, input_schema)
-2. Add handler branch in `execute_tool()` in `tools.py`
-3. Implement the actual logic in the appropriate module
-4. Update the system prompt in `agent.py` → `_build_system_prompt()` to describe the new tool
-
-### Running and Testing
+Install dependencies:
 ```bash
-cd receipt-agent-agentic
-make run                # Start server on port 8000
-make lint               # ruff check
-make format             # ruff format
-make typecheck          # pyright
-python test_pipeline.py # Run mocked tests
-python test_local.py --image path/to/receipt.png  # Test with real image
-python test_local.py --text "show all expenses"   # Test text query
+cd receipt-agent-agentic && pip install -r requirements.txt
 ```
 
-### Code Conventions
-- Python 3.12, async/await
-- Ruff: line-length 120, rules E, F, I, N, UP, B, SIM, TCH
-- Pyright: basic mode
-- Sync functions wrapped with `asyncio.to_thread()` in async context
-- Type hints on all signatures
+## Workflow: Process Receipts from a Folder
+
+When the user says something like "process my receipts in ./receipts/" or provides a folder path:
+
+### Step 1: Find receipt images
+Use Glob to find all images (`*.jpg`, `*.png`, `*.jpeg`, `*.webp`) in the specified folder.
+
+### Step 2: Read each image and extract data
+Use the Read tool to view each image. You can see it — extract these fields yourself:
+- `date` (DD/MM/YYYY format)
+- `amount` (numeric string, e.g. "42.50")
+- `currency` (ISO code: EUR, USD, GBP, etc.)
+- `expense_type` (one of: Meals, Transport, Office Supplies, Software, Accommodation, Utilities, Other)
+- `merchant` (vendor name)
+- `description` (brief description of purchase)
+
+### Step 3: Check for duplicates and log each receipt
+Run Python to call the existing modules. All commands must run from the `receipt-agent-agentic/` directory:
+
+```python
+import sys
+sys.path.insert(0, "receipt-agent-agentic")
+from receipt_processor import ReceiptData
+from excel_logger import is_duplicate, append_receipt
+
+data = ReceiptData(
+    date="14/03/2026",
+    amount="42.50",
+    currency="EUR",
+    expense_type="Meals",
+    merchant="Restaurant XYZ",
+    description="Team lunch",
+)
+
+# Check duplicate
+if not is_duplicate(data):
+    seq = append_receipt(data, image_path="receipts/receipt1.jpg")
+    print(f"Logged as #{seq}")
+else:
+    print("Duplicate — skipped")
+```
+
+### Step 4: Send reimbursement email (if user wants)
+```python
+import sys
+sys.path.insert(0, "receipt-agent-agentic")
+from receipt_processor import ReceiptData
+from email_sender import send_reimbursement_email
+
+data = ReceiptData(date="14/03/2026", amount="42.50", currency="EUR",
+                   expense_type="Meals", merchant="Restaurant XYZ", description="Team lunch")
+send_reimbursement_email([(data, "receipts/receipt1.jpg", 1)])
+print("Email sent")
+```
+
+### Step 5: Report results to the user
+Summarize what was processed: how many receipts logged, any duplicates skipped, emails sent.
+
+## Workflow: Query Expenses
+
+When the user asks about spending (e.g. "total this month", "show all meals"):
+
+```python
+import sys
+sys.path.insert(0, "receipt-agent-agentic")
+from excel_logger import query_receipts, get_summary
+
+# Get summary
+summary = get_summary()
+print(summary)
+
+# Or filter: 'all', 'month', 'expense_type', 'last_n', 'merchant'
+results = query_receipts("month", "03/2026")
+print(results)
+```
+
+## Workflow: Delete a Receipt
+
+```python
+import sys
+sys.path.insert(0, "receipt-agent-agentic")
+from excel_logger import delete_receipt
+
+deleted = delete_receipt(seq_number=3)
+print("Deleted" if deleted else "Not found")
+```
+
+## Workflow: Send Custom Report Email
+
+```python
+import sys
+sys.path.insert(0, "receipt-agent-agentic")
+from email_sender import send_summary_email
+
+send_summary_email(
+    subject="March 2026 Expense Report",
+    body="Total: 450.00 EUR across 8 receipts...",
+    to="manager@company.com",
+    attachments=["receipts/receipt1.jpg", "receipts/receipt2.jpg"],
+)
+```
+
+## Key Modules (in `receipt-agent-agentic/`)
+
+| Module | Key Functions | Notes |
+|--------|--------------|-------|
+| `receipt_processor.py` | `ReceiptData` dataclass | Used to construct receipt objects |
+| `excel_logger.py` | `append_receipt()`, `is_duplicate()`, `query_receipts()`, `delete_receipt()`, `get_summary()` | All sync, file: `reimbursements.xlsx` |
+| `email_sender.py` | `send_reimbursement_email()`, `send_summary_email()` | Requires SMTP config in `.env` |
+| `config.py` | `Config` dataclass, `config` singleton | Auto-loads `.env` via dotenv |
+
+## Important Notes
+
+- The Excel file is saved as `reimbursements.xlsx` in the working directory
+- Receipt images should be kept alongside the Excel file so email attachments work
+- Duplicate detection matches on date + merchant + amount
+- After deletion, remaining receipts are re-numbered automatically
+- All amounts should be strings (e.g. "42.50", not 42.50)
+- Dates must be in DD/MM/YYYY format
